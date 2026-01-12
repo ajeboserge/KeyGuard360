@@ -1,0 +1,144 @@
+"""
+KeyGuard360 Agent Configuration
+Configure AWS credentials and monitoring settings
+"""
+
+import os
+from pathlib import Path
+
+
+class Config:
+    """Configuration class for KeyGuard360 agent"""
+    
+    # ============================================================================
+    # AWS CREDENTIALS
+    # ============================================================================
+    # IMPORTANT: Replace these with your actual AWS credentials
+    # For production, use environment variables or AWS credentials file
+    AWS_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY_ID', 'YOUR_AWS_ACCESS_KEY_HERE')
+    AWS_SECRET_KEY = os.getenv('AWS_SECRET_ACCESS_KEY', 'YOUR_AWS_SECRET_KEY_HERE')
+    AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
+    
+    # ============================================================================
+    # AWS SERVICES
+    # ============================================================================
+    # S3 Bucket for storing screenshots and files
+    S3_BUCKET = os.getenv('S3_BUCKET', 'keyguard360-data')
+    
+    # DynamoDB Tables
+    DYNAMODB_LOGS_TABLE = os.getenv('DYNAMODB_LOGS_TABLE', 'keyguard360-logs')
+    DYNAMODB_DEVICES_TABLE = os.getenv('DYNAMODB_DEVICES_TABLE', 'keyguard360-devices')
+    
+    # SNS Topic for alerts
+    SNS_TOPIC_ARN = os.getenv('SNS_TOPIC_ARN', 'arn:aws:sns:us-east-1:123456789012:keyguard360-alerts')
+    
+    # ============================================================================
+    # MONITORING SETTINGS
+    # ============================================================================
+    # Enable/disable features
+    ENABLE_SCREENSHOTS = True  # Capture screenshots
+    ENABLE_KEYLOGGING = True   # Log keyboard activity
+    ENABLE_PROCESS_MONITORING = True  # Monitor running processes
+    
+    # Screenshot settings
+    SCREENSHOT_INTERVAL = 300  # Capture screenshot every 5 minutes (300 seconds)
+    SCREENSHOT_QUALITY = 85    # JPEG quality (1-100)
+    
+    # Keylogging settings
+    KEYLOG_BUFFER_SIZE = 100   # Upload keylogs after this many keystrokes
+    
+    # Status update interval
+    STATUS_UPDATE_INTERVAL = 60  # Update device status every 60 seconds
+    
+    # ============================================================================
+    # AGENT SETTINGS
+    # ============================================================================
+    AGENT_VERSION = '1.0.0'
+    DELETE_LOCAL_CACHE = True  # Delete local files after uploading to AWS
+    
+    # ============================================================================
+    # THREAT DETECTION
+    # ============================================================================
+    # Keywords that trigger alerts
+    THREAT_KEYWORDS = [
+        'confidential',
+        'secret',
+        'password',
+        'credential',
+        'hack',
+        'exploit',
+        'malware',
+        'ransomware'
+    ]
+    
+    # Suspicious processes
+    SUSPICIOUS_PROCESSES = [
+        'wireshark',
+        'tcpdump',
+        'nmap',
+        'metasploit',
+        'burpsuite'
+    ]
+    
+    # ============================================================================
+    # COMPLIANCE
+    # ============================================================================
+    # Business hours (for compliance monitoring)
+    BUSINESS_HOURS_START = 9   # 9 AM
+    BUSINESS_HOURS_END = 17    # 5 PM
+    
+    # Allowed/blocked applications
+    BLOCKED_APPS = [
+        'torrent',
+        'bittorrent',
+        'utorrent',
+        'limewire'
+    ]
+    
+    def validate(self):
+        """Validate configuration"""
+        errors = []
+        
+        # Check AWS credentials
+        if self.AWS_ACCESS_KEY == 'YOUR_AWS_ACCESS_KEY_HERE':
+            errors.append("AWS_ACCESS_KEY not configured")
+        
+        if self.AWS_SECRET_KEY == 'YOUR_AWS_SECRET_KEY_HERE':
+            errors.append("AWS_SECRET_KEY not configured")
+        
+        if self.S3_BUCKET == 'keyguard360-data':
+            print("WARNING: Using default S3 bucket name. Make sure it exists in your AWS account.")
+        
+        if errors:
+            print("\n❌ Configuration Errors:")
+            for error in errors:
+                print(f"   - {error}")
+            print("\n📝 To fix:")
+            print("   1. Edit agent/config.py and add your AWS credentials")
+            print("   2. Or set environment variables:")
+            print("      export AWS_ACCESS_KEY_ID='your-key'")
+            print("      export AWS_SECRET_ACCESS_KEY='your-secret'")
+            print("      export AWS_REGION='us-east-1'")
+            print("      export S3_BUCKET='your-bucket-name'\n")
+            return False
+        
+        return True
+    
+    def __repr__(self):
+        """String representation (hide sensitive data)"""
+        return f"""KeyGuard360 Configuration:
+  AWS Region: {self.AWS_REGION}
+  S3 Bucket: {self.S3_BUCKET}
+  Screenshots: {'Enabled' if self.ENABLE_SCREENSHOTS else 'Disabled'}
+  Keylogging: {'Enabled' if self.ENABLE_KEYLOGGING else 'Disabled'}
+  Screenshot Interval: {self.SCREENSHOT_INTERVAL}s
+  Agent Version: {self.AGENT_VERSION}
+"""
+
+
+# Create a default instance
+config = Config()
+
+if __name__ == '__main__':
+    print(config)
+    print(f"\nConfiguration valid: {config.validate()}")

@@ -1,0 +1,19 @@
+# KeyGuard360 Monitoring Agent Requirements
+# Install with: pip install -r requirements.txt
+
+# AWS SDK
+boto3==1.34.0
+botocore==1.34.0
+
+# Screenshot capture
+Pillow>=11.0.0
+
+# Keyboard monitoring
+pynput==1.7.6
+
+# System information
+psutil==5.9.6
+
+# Additional utilities
+python-dateutil==2.8.2
+requests==2.31.0
