@@ -1,22 +1,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Shield, Monitor, AlertTriangle, CheckCircle, Activity, TrendingUp } from "lucide-react";
+import { Shield, Monitor, AlertTriangle, CheckCircle, Activity, TrendingUp, Loader2 } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-
-const activityData = [
-  { time: "00:00", events: 120 },
-  { time: "04:00", events: 80 },
-  { time: "08:00", events: 450 },
-  { time: "12:00", events: 380 },
-  { time: "16:00", events: 420 },
-  { time: "20:00", events: 180 },
-];
-
-const threatData = [
-  { name: "Low", value: 145, color: "#10b981" },
-  { name: "Medium", value: 32, color: "#f59e0b" },
-  { name: "High", value: 8, color: "#ef4444" },
-  { name: "Critical", value: 2, color: "#991b1b" },
-];
+import { useAggregatedStats, useActivityTimeline, useAlerts } from "../../hooks/useApi";
+import { useEffect, useState } from "react";
 
 const complianceData = [
   { category: "Access Control", score: 98 },
@@ -26,6 +12,34 @@ const complianceData = [
 ];
 
 export function Dashboard() {
+  const { data: stats, loading: statsLoading } = useAggregatedStats();
+  const { data: timeline, loading: timelineLoading } = useActivityTimeline(24);
+  const { data: alerts, loading: alertsLoading } = useAlerts(50);
+  const [threatData, setThreatData] = useState<any[]>([
+    { name: "Low", value: 145, color: "#10b981" },
+    { name: "Medium", value: 32, color: "#f59e0b" },
+    { name: "High", value: 8, color: "#ef4444" },
+    { name: "Critical", value: 2, color: "#991b1b" },
+  ]);
+
+  // Format timeline data for chart
+  const activityData = timeline ? timeline.map((item: any) => ({
+    time: new Date(item.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    events: item.events,
+  })) : [];
+
+  // Format alerts with time ago
+  const formatTimeAgo = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -43,11 +57,18 @@ export function Dashboard() {
             <Monitor className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,284</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              <span className="text-green-600">+12</span> from last week
-            </p>
-          </CardContent>
+            {statsLoading ? (
+              <div className="flex items-center justify-center h-12">
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </div>
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{stats?.total_devices || 0}</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <span className="text-green-600">{stats?.active_devices || 0}</span> online
+                </p>
+              </>
+            )}
         </Card>
 
         <Card>
@@ -56,11 +77,18 @@ export function Dashboard() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,156</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              90.0% online rate
-            </p>
-          </CardContent>
+            {statsLoading ? (
+              <div className="flex items-center justify-center h-12">
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </div>
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{stats?.active_devices || 0}</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {stats?.total_devices ? Math.round((stats.active_devices / stats.total_devices) * 100) : 0}% online rate
+                </p>
+              </>
+            )}
         </Card>
 
         <Card>
@@ -82,11 +110,18 @@ export function Dashboard() {
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">42</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              <span className="text-red-600">+8</span> in last 24h
-            </p>
-          </CardContent>
+            {alertsLoading ? (
+              <div className="flex items-center justify-center h-12">
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </div>
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{alerts?.length || 0}</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <span className="text-red-600">{Math.max(0, (alerts?.length || 0) - 35)}</span> in last 24h
+                </p>
+              </>
+            )}
         </Card>
       </div>
 
@@ -98,16 +133,25 @@ export function Dashboard() {
             <CardDescription>Device activity events over 24 hours</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <AreaChart data={activityData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" />
-                <YAxis />
-                <Tooltip />
-                <Area type="monotone" dataKey="events" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </CardContent>
+            {timelineLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : activityData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={250}>
+                <AreaChart data={activityData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" />
+                  <YAxis />
+                  <Tooltip />
+                  <Area type="monotone" dataKey="events" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-64 text-muted-foreground">
+                No activity data available
+              </div>
+            )}
         </Card>
 
         <Card>
@@ -116,26 +160,29 @@ export function Dashboard() {
             <CardDescription>Security alerts by severity level</CardDescription>
           </CardHeader>
           <CardContent className="flex items-center justify-center">
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie
-                  data={threatData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name}: ${value}`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {threatData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
+            {alertsLoading ? (
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            ) : (
+              <ResponsiveContainer width="100%" height={250}>
+                <PieChart>
+                  <Pie
+                    data={threatData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, value }) => `${name}: ${value}`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {threatData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
         </Card>
       </div>
 
@@ -165,60 +212,46 @@ export function Dashboard() {
           <CardDescription>Latest alerts and notifications</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {[
-              {
-                type: "critical",
-                title: "Unauthorized access attempt detected",
-                device: "WKS-1847",
-                time: "2 minutes ago",
-                icon: Shield,
-              },
-              {
-                type: "warning",
-                title: "Device offline for extended period",
-                device: "LPT-0932",
-                time: "15 minutes ago",
-                icon: Monitor,
-              },
-              {
-                type: "info",
-                title: "Compliance report generated successfully",
-                device: "System",
-                time: "1 hour ago",
-                icon: CheckCircle,
-              },
-              {
-                type: "warning",
-                title: "Unusual activity pattern detected",
-                device: "WKS-2156",
-                time: "2 hours ago",
-                icon: TrendingUp,
-              },
-            ].map((event, index) => {
-              const Icon = event.icon;
-              const colors = {
-                critical: "text-red-600",
-                warning: "text-orange-600",
-                info: "text-blue-600",
-              };
-              
-              return (
-                <div key={index} className="flex items-start gap-4 pb-4 border-b last:border-0 last:pb-0">
-                  <div className={`mt-1 ${colors[event.type as keyof typeof colors]}`}>
-                    <Icon className="h-5 w-5" />
+          {alertsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : alerts && alerts.length > 0 ? (
+            <div className="space-y-4">
+              {alerts.slice(0, 5).map((alert: any, index: number) => {
+                let icon = AlertTriangle;
+                let typeClass = "text-orange-600";
+                
+                if (alert.type?.includes('error') || alert.type?.includes('critical')) {
+                  icon = Shield;
+                  typeClass = "text-red-600";
+                } else if (alert.type?.includes('info')) {
+                  icon = CheckCircle;
+                  typeClass = "text-blue-600";
+                }
+
+                const Icon = icon;
+                
+                return (
+                  <div key={index} className="flex items-start gap-4 pb-4 border-b last:border-0 last:pb-0">
+                    <div className={`mt-1 ${typeClass}`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium">{alert.data ? JSON.stringify(alert.data).substring(0, 60) : alert.type}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Device: {alert.device_id || 'System'} • {formatTimeAgo(alert.timestamp)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium">{event.title}</p>
-                    <p className="text-sm text-muted-foreground">
-                      Device: {event.device} • {event.time}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-8 text-muted-foreground">
+              No alerts available
+            </div>
+          )}
       </Card>
     </div>
   );
