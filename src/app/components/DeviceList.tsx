@@ -124,12 +124,16 @@ export function DeviceList() {
           // Device is online if seen in last 2 minutes (more aggressive check)
           const isOnline = (new Date().getTime() - lastSeenDate.getTime()) < (2 * 60 * 1000);
 
+          // Get user from the most recent log that has a user field
+          const userLog = logsToProcess.find(l => l.device_id === log.device_id && l.user);
+          const userName = userLog?.user || log.user || "Unknown User";
+
           deviceMap[log.device_id] = {
             id: log.device_id,
             name: systemInfo.hostname,
             type: systemInfo.os.toLowerCase().includes('mac') ? "MacBook" : "Workstation",
             os: systemInfo.os,
-            user: log.user || "Unknown User",
+            user: userName,
             status: isOnline ? "online" : "offline",
             lastSeen: formatRelativeTime(log.timestamp),
             rawTimestamp: log.timestamp,
