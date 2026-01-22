@@ -34,6 +34,60 @@ logging.basicConfig(
 logger = logging.getLogger('KeyGuard360')
 
 
+class CloudWatchLogHandler(logging.Handler):
+    """Custom logging handler to send logs to AWS CloudWatch"""
+    def __init__(self, logs_client, log_group, log_stream):
+        super().__init__()
+        self.client = logs_client
+        self.log_group = log_group
+        self.log_stream = log_stream
+        self.sequence_token = None
+        self._setup_logs()
+
+    def _setup_logs(self):
+        """Ensure log group and stream exist"""
+        try:
+            # Try to create log group
+            try:
+                self.client.create_log_group(logGroupName=self.log_group)
+            except self.client.exceptions.ResourceAlreadyExistsException:
+                pass
+            
+            # Try to create log stream
+            try:
+                self.client.create_log_stream(
+                    logGroupName=self.log_group,
+                    logStreamName=self.log_stream
+                )
+            except self.client.exceptions.ResourceAlreadyExistsException:
+                pass
+        except Exception as e:
+            print(f"Failed to setup CloudWatch logs: {e}")
+
+    def emit(self, record):
+        try:
+            message = self.format(record)
+            timestamp = int(record.created * 1000)
+            
+            params = {
+                'logGroupName': self.log_group,
+                'logStreamName': self.log_stream,
+                'logEvents': [{
+                    'timestamp': timestamp,
+                    'message': message
+                }]
+            }
+            
+            if self.sequence_token:
+                params['sequenceToken'] = self.sequence_token
+                
+            response = self.client.put_log_events(**params)
+            self.sequence_token = response.get('nextSequenceToken')
+        except Exception:
+            # Don't let logging failures crash the agent
+            pass
+
+
 class KeyGuardAgent:
     """Main monitoring agent class"""
     
@@ -64,6 +118,23 @@ class KeyGuardAgent:
                 aws_secret_access_key=config.AWS_SECRET_KEY,
                 region_name=config.AWS_REGION
             )
+            self.logs_client = boto3.client(
+                'logs',
+                aws_access_key_id=config.AWS_ACCESS_KEY,
+                aws_secret_access_key=config.AWS_SECRET_KEY,
+                region_name=config.AWS_REGION
+            )
+            
+            # CloudWatch Logging setup
+            if config.ENABLE_CLOUDWATCH_LOGGING:
+                cw_handler = CloudWatchLogHandler(
+                    self.logs_client, 
+                    config.CLOUDWATCH_LOG_GROUP,
+                    f"agent-{self.device_id}"
+                )
+                cw_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+                logger.addHandler(cw_handler)
+                logger.info("CloudWatch logging enabled")
             
             # DynamoDB tables
             self.logs_table = self.dynamodb.Table(config.DYNAMODB_LOGS_TABLE)
@@ -98,13 +169,26 @@ class KeyGuardAgent:
     def get_system_info(self):
         """Collect system information"""
         try:
+            import getpass
+            import socket
             cpu_percent = psutil.cpu_percent(interval=1)
             memory = psutil.virtual_memory()
             disk = psutil.disk_usage('/')
             
+            # Get IP Address
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                ip_address = s.getsockname()[0]
+                s.close()
+            except:
+                ip_address = "127.0.0.1"
+            
             return {
                 'device_id': self.device_id,
                 'hostname': platform.node(),
+                'user': getpass.getuser(),
+                'ip_address': ip_address,
                 'os': f"{platform.system()} {platform.release()}",
                 'platform': platform.platform(),
                 'processor': platform.processor(),
@@ -115,7 +199,7 @@ class KeyGuardAgent:
                 'disk_total_gb': round(disk.total / (1024**3), 2),
                 'disk_used_gb': round(disk.used / (1024**3), 2),
                 'disk_percent': disk.percent,
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
             }
         except Exception as e:
             logger.error(f"Error collecting system info: {e}")
@@ -141,7 +225,9 @@ class KeyGuardAgent:
                 str(local_path),
                 self.config.S3_BUCKET,
                 s3_key,
-                ExtraArgs={'ContentType': 'image/png'}
+                ExtraArgs={
+                    'ContentType': 'image/png'
+                }
             )
             
             logger.info(f"Screenshot uploaded: {s3_key}")
@@ -222,10 +308,12 @@ class KeyGuardAgent:
     def _log_activity(self, activity_type: str, data: dict):
         """Log activity to DynamoDB"""
         try:
+            import getpass
             log_entry = {
                 'log_id': f"{self.device_id}_{int(time.time() * 1000)}",
                 'device_id': self.device_id,
-                'timestamp': datetime.utcnow().isoformat(),
+                'user': getpass.getuser(),
+                'timestamp': datetime.utcnow().isoformat() + 'Z',
                 'type': activity_type,
                 'data': json.dumps(data)
             }
@@ -261,8 +349,9 @@ class KeyGuardAgent:
             device_entry = {
                 'device_id': self.device_id,
                 'hostname': system_info.get('hostname', 'Unknown'),
+                'user': system_info.get('user', 'Unknown'),
                 'os': system_info.get('os', 'Unknown'),
-                'last_seen': datetime.utcnow().isoformat(),
+                'last_seen': datetime.utcnow().isoformat() + 'Z',
                 'status': 'online',
                 'agent_version': self.config.AGENT_VERSION,
                 'system_info': json.dumps(system_info)
@@ -270,7 +359,10 @@ class KeyGuardAgent:
             
             self.devices_table.put_item(Item=device_entry)
             
-            logger.info("Device status updated")
+            # Also log to activity logs so dashboard can see system info without scanning devices table
+            self._log_activity('device_info_update', system_info)
+            
+            logger.info("Device status updated and info logged")
             
         except Exception as e:
             logger.error(f"Error updating device status: {e}")

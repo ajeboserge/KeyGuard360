@@ -1,125 +1,40 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { 
-  Search, 
-  Download, 
-  FileText, 
-  Mouse, 
-  Keyboard, 
+import {
+  Search,
+  Download,
+  FileText,
+  Mouse,
+  Keyboard,
   Monitor,
   Camera,
   Mic,
   HardDrive,
   Network,
-  Clock
+  Clock,
+  RefreshCw,
+  AlertCircle
 } from "lucide-react";
+import { toast } from "sonner";
 
-const activityLogs = [
-  {
-    id: "LOG-8472",
-    timestamp: "2026-01-05 14:32:15",
-    device: "WKS-1847",
-    user: "john.smith@company.com",
-    type: "file_access",
-    action: "Accessed file: /documents/Q4_Financial_Report.xlsx",
-    severity: "info",
-    details: "File opened in Microsoft Excel",
-  },
-  {
-    id: "LOG-8473",
-    timestamp: "2026-01-05 14:31:42",
-    device: "LPT-2765",
-    user: "lisa.anderson@company.com",
-    type: "screenshot",
-    action: "Screenshot captured",
-    severity: "info",
-    details: "Stored in S3: screenshots/2026-01-05/lpt-2765-143142.png",
-  },
-  {
-    id: "LOG-8474",
-    timestamp: "2026-01-05 14:30:58",
-    device: "WKS-2156",
-    user: "mike.chen@company.com",
-    type: "network",
-    action: "Connection to external IP: 203.45.67.89",
-    severity: "warning",
-    details: "Flagged as potential data exfiltration attempt",
-  },
-  {
-    id: "LOG-8475",
-    timestamp: "2026-01-05 14:29:33",
-    device: "WKS-3098",
-    user: "chris.wilson@company.com",
-    type: "application",
-    action: "Installed application: Chrome Extension - DataSync",
-    severity: "warning",
-    details: "Requires security review",
-  },
-  {
-    id: "LOG-8476",
-    timestamp: "2026-01-05 14:28:07",
-    device: "LPT-0932",
-    user: "sarah.johnson@company.com",
-    type: "login",
-    action: "Failed authentication attempt",
-    severity: "critical",
-    details: "Multiple failed login attempts detected",
-  },
-  {
-    id: "LOG-8477",
-    timestamp: "2026-01-05 14:27:21",
-    device: "WKS-1847",
-    user: "john.smith@company.com",
-    type: "usb",
-    action: "USB device connected: SanDisk Ultra 64GB",
-    severity: "warning",
-    details: "Removable media policy violation",
-  },
-  {
-    id: "LOG-8478",
-    timestamp: "2026-01-05 14:26:45",
-    device: "LPT-1443",
-    user: "emma.davis@company.com",
-    type: "file_transfer",
-    action: "File uploaded to cloud storage",
-    severity: "info",
-    details: "Uploaded: employee_data.csv to Google Drive",
-  },
-  {
-    id: "LOG-8479",
-    timestamp: "2026-01-05 14:25:12",
-    device: "WKS-2156",
-    user: "mike.chen@company.com",
-    type: "process",
-    action: "Process terminated: suspicious_script.exe",
-    severity: "critical",
-    details: "Malware detected and quarantined by security agent",
-  },
-  {
-    id: "LOG-8480",
-    timestamp: "2026-01-05 14:24:33",
-    device: "LPT-2765",
-    user: "lisa.anderson@company.com",
-    type: "email",
-    action: "Email sent with attachment",
-    severity: "info",
-    details: "Sent to: external@competitor.com with proposal.pdf",
-  },
-  {
-    id: "LOG-8481",
-    timestamp: "2026-01-05 14:23:08",
-    device: "WKS-4512",
-    user: "david.brown@company.com",
-    type: "system",
-    action: "System configuration changed",
-    severity: "warning",
-    details: "Firewall settings modified",
-  },
-];
+// API Configuration
+const API_URL = "https://cw5b26zcta.execute-api.eu-north-1.amazonaws.com/prod/logs";
+
+interface LogEntry {
+  id: string;
+  timestamp: string;
+  device: string;
+  user: string;
+  type: string;
+  action: string;
+  severity: string;
+  details: string;
+}
 
 const getActivityIcon = (type: string) => {
   switch (type) {
@@ -127,6 +42,7 @@ const getActivityIcon = (type: string) => {
     case "file_transfer":
       return FileText;
     case "screenshot":
+    case "screenshot_captured":
       return Camera;
     case "network":
       return Network;
@@ -134,6 +50,7 @@ const getActivityIcon = (type: string) => {
     case "process":
       return Monitor;
     case "login":
+    case "keylog":
       return Keyboard;
     case "usb":
       return HardDrive;
@@ -157,7 +74,152 @@ const getSeverityBadge = (severity: string) => {
   }
 };
 
+const LogItem = ({ log }: { log: LogEntry }) => {
+  const Icon = getActivityIcon(log.type);
+  return (
+    <div className="border rounded-lg p-4 hover:bg-accent/50 transition-colors">
+      <div className="flex items-start gap-4">
+        <div className="mt-1 text-muted-foreground">
+          <Icon className="h-5 w-5" />
+        </div>
+        <div className="flex-1 space-y-1">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <p className="font-medium">{log.action}</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {log.details}
+              </p>
+            </div>
+            {getSeverityBadge(log.severity)}
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {log.timestamp}
+            </span>
+            <span className="flex items-center gap-1">
+              <Monitor className="h-3 w-3" />
+              {log.device}
+            </span>
+            <span>{log.user}</span>
+            <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">
+              {log.id}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export function ActivityMonitor() {
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const fetchLogs = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(API_URL);
+      if (!response.ok) throw new Error("Failed to fetch logs from AWS");
+
+      const rawData = await response.json();
+
+      // Map raw DynamoDB data to UI format
+      const mappedLogs: LogEntry[] = rawData.map((item: any) => ({
+        id: item.log_id || `LOG-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+        timestamp: new Date(item.timestamp).toLocaleString(),
+        device: item.device_id || "Unknown Device",
+        user: item.user || "Unknown User",
+        type: item.type || "unknown",
+        action: item.type === 'keylog' ? 'Keystrokes Captured' :
+          item.type === 'screenshot_captured' ? 'Screenshot Captured' :
+            'Activity Logged',
+        severity: item.type === 'critical' ? 'critical' : 'info',
+        details: item.type === 'keylog' ? `Detected ${item.count || 0} keystrokes` :
+          item.type === 'screenshot_captured' ? `Saved to S3 Bucket` :
+            `Item: ${item.data ? JSON.stringify(item.data).substring(0, 50) : 'N/A'}`
+      }));
+
+      // Sort by timestamp (newest first)
+      mappedLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      setLogs(mappedLogs);
+      setError(null);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message);
+      toast.error("Cloud Sync Error", {
+        description: "Could not retrieve logs from AWS Lambda backend."
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const exportToCSV = () => {
+    if (logs.length === 0) {
+      toast.error("No data to export");
+      return;
+    }
+
+    const csvRows = [];
+    const headers = ["ID", "Timestamp", "Device", "User", "Type", "Action", "Severity", "Details"];
+    csvRows.push(headers.join(','));
+
+    for (const log of logs) {
+      const row = [
+        log.id,
+        log.timestamp,
+        log.device,
+        log.user,
+        log.type,
+        `"${log.action.replace(/"/g, '""')}"`,
+        log.severity,
+        `"${log.details.replace(/"/g, '""')}"`
+      ];
+      csvRows.push(row.join(','));
+    }
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('hidden', '');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `keyguard_full_activity_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast.success("Export Successful", {
+      description: `Downloaded ${logs.length} activity records.`
+    });
+  };
+
+  const getStats = () => {
+    const today = new Date().toLocaleDateString();
+    return {
+      totalToday: logs.filter(l => new Date(l.timestamp).toLocaleDateString() === today).length,
+      screenshots: logs.filter(l => l.type === 'screenshot_captured').length,
+      fileAccess: logs.filter(l => l.type === 'file_access' || l.type === 'file_transfer').length,
+      network: logs.filter(l => l.type === 'network').length,
+    };
+  };
+
+  const stats = getStats();
+
+  useEffect(() => {
+    fetchLogs();
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(fetchLogs, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const filteredLogs = logs.filter(log =>
+    log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    log.device.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    log.details.toLowerCase().includes(searchQuery.toLowerCase())
+  );
   return (
     <div className="space-y-6">
       <div>
@@ -175,8 +237,8 @@ export function ActivityMonitor() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">48,392</div>
-            <p className="text-xs text-muted-foreground mt-1">+12% from yesterday</p>
+            <div className="text-2xl font-bold">{stats.totalToday.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground mt-1">Real-time sync active</p>
           </CardContent>
         </Card>
 
@@ -186,7 +248,7 @@ export function ActivityMonitor() {
             <Camera className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">2,847</div>
+            <div className="text-2xl font-bold">{stats.screenshots.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground mt-1">Stored in S3</p>
           </CardContent>
         </Card>
@@ -197,7 +259,7 @@ export function ActivityMonitor() {
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">15,234</div>
+            <div className="text-2xl font-bold">{stats.fileAccess.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground mt-1">Across all devices</p>
           </CardContent>
         </Card>
@@ -208,8 +270,8 @@ export function ActivityMonitor() {
             <Network className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">8,421</div>
-            <p className="text-xs text-muted-foreground mt-1">42 flagged</p>
+            <div className="text-2xl font-bold">{stats.network.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground mt-1">Live traffic monitor</p>
           </CardContent>
         </Card>
       </div>
@@ -222,7 +284,7 @@ export function ActivityMonitor() {
               <CardTitle>Activity Logs</CardTitle>
               <CardDescription>Real-time monitoring of device activities</CardDescription>
             </div>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={exportToCSV} disabled={loading || logs.length === 0}>
               <Download className="h-4 w-4 mr-2" />
               Export Logs
             </Button>
@@ -239,90 +301,101 @@ export function ActivityMonitor() {
             </TabsList>
 
             <TabsContent value="all" className="space-y-4">
-              <div className="relative mb-4">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search activity logs..." className="pl-8" />
+              <div className="flex items-center gap-4 mb-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search activity logs..."
+                    className="pl-8"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <Button variant="outline" size="icon" onClick={fetchLogs} disabled={loading}>
+                  <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                </Button>
               </div>
 
+              {loading && logs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-muted-foreground space-y-4">
+                  <RefreshCw className="h-10 w-10 animate-spin" />
+                  <p>Fetching latest activity from AWS...</p>
+                </div>
+              ) : error ? (
+                <div className="flex flex-col items-center justify-center py-20 text-destructive space-y-4 border border-destructive/20 rounded-lg bg-destructive/5">
+                  <AlertCircle className="h-10 w-10" />
+                  <div className="text-center">
+                    <p className="font-semibold">Failed to load logs</p>
+                    <p className="text-sm opacity-80">{error}</p>
+                  </div>
+                  <Button variant="outline" onClick={fetchLogs} size="sm">Try Again</Button>
+                </div>
+              ) : filteredLogs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-muted-foreground space-y-4">
+                  <Search className="h-10 w-10 opacity-20" />
+                  <p>No activity logs found</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[600px] pr-4">
+                  <div className="space-y-3">
+                    {filteredLogs.map((log) => (
+                      <LogItem key={log.id} log={log} />
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </TabsContent>
+
+            <TabsContent value="critical">
               <ScrollArea className="h-[600px] pr-4">
                 <div className="space-y-3">
-                  {activityLogs.map((log) => {
-                    const Icon = getActivityIcon(log.type);
-                    return (
-                      <div key={log.id} className="border rounded-lg p-4 hover:bg-accent/50 transition-colors">
-                        <div className="flex items-start gap-4">
-                          <div className="mt-1 text-muted-foreground">
-                            <Icon className="h-5 w-5" />
-                          </div>
-                          <div className="flex-1 space-y-1">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1">
-                                <p className="font-medium">{log.action}</p>
-                                <p className="text-sm text-muted-foreground mt-1">
-                                  {log.details}
-                                </p>
-                              </div>
-                              {getSeverityBadge(log.severity)}
-                            </div>
-                            <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
-                              <span className="flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {log.timestamp}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <Monitor className="h-3 w-3" />
-                                {log.device}
-                              </span>
-                              <span>{log.user}</span>
-                              <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">
-                                {log.id}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {logs.filter(log => log.severity === "critical").map((log) => (
+                    <LogItem key={log.id} log={log} />
+                  ))}
+                  {logs.filter(log => log.severity === "critical").length === 0 && (
+                    <p className="text-center py-10 text-muted-foreground">No critical events found.</p>
+                  )}
                 </div>
               </ScrollArea>
             </TabsContent>
 
-            <TabsContent value="critical">
-              <div className="space-y-3">
-                {activityLogs.filter(log => log.severity === "critical").map((log) => {
-                  const Icon = getActivityIcon(log.type);
-                  return (
-                    <div key={log.id} className="border border-red-200 rounded-lg p-4 bg-red-50">
-                      <div className="flex items-start gap-4">
-                        <div className="mt-1 text-red-600">
-                          <Icon className="h-5 w-5" />
-                        </div>
-                        <div className="flex-1 space-y-1">
-                          <p className="font-medium">{log.action}</p>
-                          <p className="text-sm text-muted-foreground">{log.details}</p>
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
-                            <span>{log.timestamp}</span>
-                            <span>{log.device}</span>
-                            <span>{log.user}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </TabsContent>
-
             <TabsContent value="warning">
-              <p className="text-sm text-muted-foreground">Showing warning-level events only</p>
+              <ScrollArea className="h-[600px] pr-4">
+                <div className="space-y-3">
+                  {logs.filter(log => log.severity === "warning").map((log) => (
+                    <LogItem key={log.id} log={log} />
+                  ))}
+                  {logs.filter(log => log.severity === "warning").length === 0 && (
+                    <p className="text-center py-10 text-muted-foreground">No warning events found.</p>
+                  )}
+                </div>
+              </ScrollArea>
             </TabsContent>
 
             <TabsContent value="file">
-              <p className="text-sm text-muted-foreground">Showing file access events only</p>
+              <ScrollArea className="h-[600px] pr-4">
+                <div className="space-y-3">
+                  {logs.filter(log => log.type === "file_access" || log.type === "file_transfer").map((log) => (
+                    <LogItem key={log.id} log={log} />
+                  ))}
+                  {logs.filter(log => log.type === "file_access" || log.type === "file_transfer").length === 0 && (
+                    <p className="text-center py-10 text-muted-foreground">No file access events found.</p>
+                  )}
+                </div>
+              </ScrollArea>
             </TabsContent>
 
             <TabsContent value="network">
-              <p className="text-sm text-muted-foreground">Showing network events only</p>
+              <ScrollArea className="h-[600px] pr-4">
+                <div className="space-y-3">
+                  {logs.filter(log => log.type === "network").map((log) => (
+                    <LogItem key={log.id} log={log} />
+                  ))}
+                  {logs.filter(log => log.type === "network").length === 0 && (
+                    <p className="text-center py-10 text-muted-foreground">No network events found.</p>
+                  )}
+                </div>
+              </ScrollArea>
             </TabsContent>
           </Tabs>
         </CardContent>

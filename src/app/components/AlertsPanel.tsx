@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -5,118 +6,37 @@ import { ScrollArea } from "./ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Switch } from "./ui/switch";
 import { Label } from "./ui/label";
-import { 
-  Bell, 
-  Shield, 
-  AlertTriangle, 
-  Info, 
-  CheckCircle, 
+import {
+  Bell,
+  Shield,
+  AlertTriangle,
+  Info,
+  CheckCircle,
   XCircle,
   Mail,
   MessageSquare,
   Smartphone,
   Clock,
-  Filter
+  Filter,
+  RefreshCw,
+  Download
 } from "lucide-react";
+import { toast } from "sonner";
 
-const alerts = [
-  {
-    id: "ALT-9821",
-    timestamp: "2026-01-05 14:42:15",
-    severity: "critical",
-    type: "Security Threat",
-    title: "Malware detected and quarantined",
-    description: "Suspicious executable file detected on WKS-2156. File has been automatically quarantined and admin notified.",
-    device: "WKS-2156",
-    user: "mike.chen@company.com",
-    status: "active",
-    channel: ["email", "sms"],
-  },
-  {
-    id: "ALT-9820",
-    timestamp: "2026-01-05 14:35:08",
-    severity: "high",
-    type: "Unauthorized Access",
-    title: "Multiple failed login attempts",
-    description: "5 failed authentication attempts detected on LPT-0932 within 10 minutes. Account temporarily locked.",
-    device: "LPT-0932",
-    user: "sarah.johnson@company.com",
-    status: "acknowledged",
-    channel: ["email"],
-  },
-  {
-    id: "ALT-9819",
-    timestamp: "2026-01-05 14:28:42",
-    severity: "medium",
-    type: "Policy Violation",
-    title: "USB device policy violation",
-    description: "Unauthorized USB storage device connected to workstation. Data transfer blocked per security policy.",
-    device: "WKS-1847",
-    user: "john.smith@company.com",
-    status: "active",
-    channel: ["email", "slack"],
-  },
-  {
-    id: "ALT-9818",
-    timestamp: "2026-01-05 14:15:23",
-    severity: "high",
-    type: "Data Exfiltration",
-    title: "Large file transfer detected",
-    description: "Attempted upload of 2.3GB of data to external cloud storage. Transfer blocked and logged.",
-    device: "LPT-1443",
-    user: "emma.davis@company.com",
-    status: "resolved",
-    channel: ["email", "sms"],
-  },
-  {
-    id: "ALT-9817",
-    timestamp: "2026-01-05 14:08:56",
-    severity: "low",
-    type: "System Status",
-    title: "Device went offline",
-    description: "Device has been offline for more than 2 hours. Last known location: Seattle, WA",
-    device: "MOB-0821",
-    user: "alex.martinez@company.com",
-    status: "active",
-    channel: ["email"],
-  },
-  {
-    id: "ALT-9816",
-    timestamp: "2026-01-05 13:52:14",
-    severity: "critical",
-    type: "Security Threat",
-    title: "Ransomware attempt blocked",
-    description: "Ransomware encryption pattern detected and blocked. System rollback initiated successfully.",
-    device: "WKS-4512",
-    user: "david.brown@company.com",
-    status: "resolved",
-    channel: ["email", "sms", "slack"],
-  },
-  {
-    id: "ALT-9815",
-    timestamp: "2026-01-05 13:43:07",
-    severity: "medium",
-    type: "Compliance",
-    title: "Compliance scan completed",
-    description: "Scheduled compliance scan found 3 minor issues. Report generated and available for review.",
-    device: "System",
-    user: "System",
-    status: "acknowledged",
-    channel: ["email"],
-  },
-  {
-    id: "ALT-9814",
-    timestamp: "2026-01-05 13:28:35",
-    severity: "high",
-    type: "Network Activity",
-    title: "Suspicious network traffic",
-    description: "Unusual outbound network traffic detected to unknown IP addresses. Connection terminated.",
-    device: "WKS-3098",
-    user: "chris.wilson@company.com",
-    status: "active",
-    channel: ["email", "sms"],
-  },
-];
+const API_URL = "https://cw5b26zcta.execute-api.eu-north-1.amazonaws.com/prod/logs";
+
+interface AlertEntry {
+  id: string;
+  timestamp: string;
+  severity: string;
+  type: string;
+  title: string;
+  description: string;
+  device: string;
+  user: string;
+  status: "active" | "acknowledged" | "resolved";
+  channel: string[];
+}
 
 const getSeverityIcon = (severity: string) => {
   switch (severity) {
@@ -181,6 +101,88 @@ const getChannelIcons = (channels: string[]) => {
 };
 
 export function AlertsPanel() {
+  const [alerts, setAlerts] = useState<AlertEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchAlerts = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(API_URL);
+      if (!response.ok) throw new Error("Failed to fetch logs");
+      const data = await response.json();
+
+      // Convert logs to alerts (filter for high/critical or specific types)
+      const mappedAlerts: AlertEntry[] = data.map((item: any) => {
+        const typeMapping: Record<string, string> = {
+          'screenshot_captured': 'Security Scan',
+          'keylog': 'Data Capture',
+          'device_info_update': 'System Status',
+          'unauthorized_access': 'Security Threat',
+          'file_access': 'Policy Monitor'
+        };
+
+        const severity = item.severity || (
+          item.type === 'critical' ? 'critical' :
+            item.type === 'unauthorized_access' ? 'high' :
+              'medium'
+        );
+
+        return {
+          id: item.log_id || `ALT-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+          timestamp: new Date(item.timestamp).toLocaleString(),
+          severity: severity,
+          type: typeMapping[item.type] || 'System Event',
+          title: item.type === 'keylog' ? `Keystroke activity on ${item.device_id}` :
+            item.type === 'screenshot_captured' ? `Screen capture on ${item.device_id}` :
+              `Alert from ${item.device_id}`,
+          description: `Activity detected on device ${item.device_id}. Data: ${JSON.stringify(item.data).substring(0, 100)}...`,
+          device: item.device_id || "System",
+          user: item.user || "Unknown User",
+          status: item.status || "active",
+          channel: ["email"]
+        };
+      });
+
+      setAlerts(mappedAlerts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+    } catch (err) {
+      console.error(err);
+      toast.error("Alert Sync Error", { description: "Failed to load live alerts." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleStatusChange = (id: string, newStatus: "acknowledged" | "resolved") => {
+    setAlerts(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
+    toast.success(`Alert ${newStatus}`, { description: `Item ${id} updated.` });
+  };
+
+  const exportAlerts = () => {
+    const csvRows = [];
+    const headers = ["ID", "Timestamp", "Severity", "Type", "Device", "Status"];
+    csvRows.push(headers.join(','));
+    alerts.forEach(a => csvRows.push([a.id, a.timestamp, a.severity, a.type, a.device, a.status].join(',')));
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `alerts_export_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  const stats = {
+    active: alerts.filter(a => a.status === 'active').length,
+    critical: alerts.filter(a => a.severity === 'critical').length,
+    resolvedToday: alerts.filter(a => a.status === 'resolved').length,
+    totalSent: alerts.length * 2
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -198,7 +200,7 @@ export function AlertsPanel() {
             <Bell className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">42</div>
+            <div className="text-2xl font-bold">{stats.active}</div>
             <p className="text-xs text-muted-foreground mt-1">Requires attention</p>
           </CardContent>
         </Card>
@@ -209,7 +211,7 @@ export function AlertsPanel() {
             <Shield className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">8</div>
+            <div className="text-2xl font-bold">{stats.critical}</div>
             <p className="text-xs text-muted-foreground mt-1">Immediate action needed</p>
           </CardContent>
         </Card>
@@ -220,19 +222,19 @@ export function AlertsPanel() {
             <CheckCircle className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">127</div>
-            <p className="text-xs text-muted-foreground mt-1">Average resolution: 18 min</p>
+            <div className="text-2xl font-bold">{stats.resolvedToday}</div>
+            <p className="text-xs text-muted-foreground mt-1">Auto-synced from AWS</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Notifications Sent</CardTitle>
-            <Mail className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Live Feed Status</CardTitle>
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : 'text-green-600'}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">384</div>
-            <p className="text-xs text-muted-foreground mt-1">Via email, SMS, Slack</p>
+            <div className="text-2xl font-bold">{loading ? 'Syncing...' : 'Connected'}</div>
+            <p className="text-xs text-muted-foreground mt-1">Refreshing every 30s</p>
           </CardContent>
         </Card>
       </div>
@@ -245,20 +247,20 @@ export function AlertsPanel() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle>Alert Feed</CardTitle>
-                  <CardDescription>Real-time security notifications</CardDescription>
+                  <CardDescription>Real-time security notifications from your devices</CardDescription>
                 </div>
-                <Button variant="outline" size="sm">
-                  <Filter className="h-4 w-4 mr-2" />
-                  Filter
+                <Button variant="outline" size="sm" onClick={exportAlerts} disabled={loading || alerts.length === 0}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="active" className="w-full">
                 <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="active">Active (42)</TabsTrigger>
-                  <TabsTrigger value="acknowledged">Acknowledged (23)</TabsTrigger>
-                  <TabsTrigger value="resolved">Resolved (127)</TabsTrigger>
+                  <TabsTrigger value="active">Active ({stats.active})</TabsTrigger>
+                  <TabsTrigger value="acknowledged">Acknowledged ({alerts.filter(a => a.status === 'acknowledged').length})</TabsTrigger>
+                  <TabsTrigger value="resolved">Resolved ({stats.resolvedToday})</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="active" className="mt-4">
@@ -293,10 +295,10 @@ export function AlertsPanel() {
                                 </div>
                                 <div className="flex items-center gap-2">
                                   {getChannelIcons(alert.channel)}
-                                  <Button size="sm" variant="outline">
+                                  <Button size="sm" variant="outline" onClick={() => handleStatusChange(alert.id, "acknowledged")}>
                                     Acknowledge
                                   </Button>
-                                  <Button size="sm">
+                                  <Button size="sm" onClick={() => handleStatusChange(alert.id, "resolved")}>
                                     Resolve
                                   </Button>
                                 </div>
@@ -437,26 +439,26 @@ export function AlertsPanel() {
           {/* Quick Stats */}
           <Card className="mt-4">
             <CardHeader>
-              <CardTitle>Alert Statistics</CardTitle>
+              <CardTitle>Alert Distribution</CardTitle>
               <CardDescription>Last 24 hours</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Critical</span>
-                  <span className="font-medium text-red-600">8</span>
+                  <span className="font-medium text-red-600">{stats.critical}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">High</span>
-                  <span className="font-medium text-orange-600">15</span>
+                  <span className="font-medium text-orange-600">{alerts.filter(a => a.severity === 'high').length}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Medium</span>
-                  <span className="font-medium text-yellow-600">12</span>
+                  <span className="font-medium text-yellow-600">{alerts.filter(a => a.severity === 'medium').length}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Low</span>
-                  <span className="font-medium text-blue-600">7</span>
+                  <span className="font-medium text-blue-600">{alerts.filter(a => a.severity === 'low').length}</span>
                 </div>
               </div>
             </CardContent>

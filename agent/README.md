@@ -122,6 +122,8 @@ AWS_REGION = 'us-east-1'
 S3_BUCKET = 'keyguard360-data'
 DYNAMODB_LOGS_TABLE = 'keyguard360-logs'
 DYNAMODB_DEVICES_TABLE = 'keyguard360-devices'
+ENABLE_CLOUDWATCH_LOGGING = True  # Enable cloud logging
+CLOUDWATCH_LOG_GROUP = 'keyguard360-agent-logs'
 ```
 
 ### Threat Detection

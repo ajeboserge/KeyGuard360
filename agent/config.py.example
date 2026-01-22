@@ -17,7 +17,7 @@ class Config:
     # For production, use environment variables or AWS credentials file
     AWS_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY_ID', 'YOUR_AWS_ACCESS_KEY_HERE')
     AWS_SECRET_KEY = os.getenv('AWS_SECRET_ACCESS_KEY', 'YOUR_AWS_SECRET_KEY_HERE')
-    AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
+    AWS_REGION = os.getenv('AWS_REGION', 'eu-north-1')
     
     # ============================================================================
     # AWS SERVICES
@@ -31,6 +31,11 @@ class Config:
     
     # SNS Topic for alerts
     SNS_TOPIC_ARN = os.getenv('SNS_TOPIC_ARN', 'arn:aws:sns:us-east-1:123456789012:keyguard360-alerts')
+    
+    # CloudWatch Logging
+    ENABLE_CLOUDWATCH_LOGGING = os.getenv('ENABLE_CLOUDWATCH_LOGGING', 'True').lower() == 'true'
+    CLOUDWATCH_LOG_GROUP = os.getenv('CLOUDWATCH_LOG_GROUP', 'keyguard360-agent-logs')
+    # Log stream will be device-id by default, configured in agent initialization
     
     # ============================================================================
     # MONITORING SETTINGS

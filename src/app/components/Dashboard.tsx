@@ -1,8 +1,18 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Shield, Monitor, AlertTriangle, CheckCircle, Activity, TrendingUp, Loader2 } from "lucide-react";
+import { Button } from "./ui/button";
+import { Shield, Monitor, AlertTriangle, CheckCircle, Activity, TrendingUp, RefreshCw } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { useAggregatedStats, useActivityTimeline, useAlerts } from "../../hooks/useApi";
-import { useEffect, useState } from "react";
+import { toast } from "sonner";
+
+const API_URL = "https://cw5b26zcta.execute-api.eu-north-1.amazonaws.com/prod/logs";
+
+const threatData = [
+  { name: "Low", value: 145, color: "#10b981" },
+  { name: "Medium", value: 32, color: "#f59e0b" },
+  { name: "High", value: 8, color: "#ef4444" },
+  { name: "Critical", value: 2, color: "#991b1b" },
+];
 
 const complianceData = [
   { category: "Access Control", score: 98 },
@@ -12,63 +22,121 @@ const complianceData = [
 ];
 
 export function Dashboard() {
-  const { data: stats, loading: statsLoading } = useAggregatedStats();
-  const { data: timeline, loading: timelineLoading } = useActivityTimeline(24);
-  const { data: alerts, loading: alertsLoading } = useAlerts(50);
-  const [threatData, setThreatData] = useState<any[]>([
-    { name: "Low", value: 145, color: "#10b981" },
-    { name: "Medium", value: 32, color: "#f59e0b" },
-    { name: "High", value: 8, color: "#ef4444" },
-    { name: "Critical", value: 2, color: "#991b1b" },
-  ]);
+  const [stats, setStats] = useState({
+    totalEvents: 0,
+    activeDevices: 0,
+    criticalAlerts: 0,
+    onlineRate: 0,
+    recentEvents: [] as any[],
+    activityData: [] as any[],
+    threatTypeData: [] as any[]
+  });
+  const [loading, setLoading] = useState(true);
 
-  // Format timeline data for chart
-  const activityData = timeline ? timeline.map((item: any) => ({
-    time: new Date(item.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    events: item.events,
-  })) : [];
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(API_URL);
+      if (!response.ok) throw new Error("Failed to fetch dashboard data");
+      const rawData = await response.json();
 
-  // Format alerts with time ago
-  const formatTimeAgo = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
-    if (seconds < 60) return `${seconds}s ago`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    return `${Math.floor(seconds / 86400)}d ago`;
+      // Sort data to show newest logs first
+      const data = [...rawData].sort((a: any, b: any) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      // 1. Core Metrics
+      const devices = new Set(data.map((item: any) => item.device_id));
+      const criticals = data.filter((item: any) => item.type === 'critical').length;
+
+      // 2. Map Events for Activity Timeline (Hourly grouping)
+      const hourly: Record<string, number> = {};
+      data.forEach((item: any) => {
+        const h = new Date(item.timestamp).getHours();
+        const label = `${h}:00`;
+        hourly[label] = (hourly[label] || 0) + 1;
+      });
+      const chartActivity = Object.entries(hourly)
+        .map(([time, events]) => ({ time, events }))
+        .sort((a, b) => parseInt(a.time) - parseInt(b.time));
+
+      // 3. Map Events for Distribution Chart
+      const typeCounts: Record<string, number> = {};
+      data.forEach((item: any) => {
+        const type = item.type === 'keylog' ? 'Keylogs' :
+          item.type === 'screenshot_captured' ? 'Screenshots' : 'Other';
+        typeCounts[type] = (typeCounts[type] || 0) + 1;
+      });
+
+      const chartTypes = Object.entries(typeCounts).map(([name, value]) => ({
+        name,
+        value,
+        color: name === 'Keylogs' ? '#10b981' : name === 'Screenshots' ? '#3b82f6' : '#f59e0b'
+      }));
+
+      // 4. Map the 5 most recent events
+      const recent = data.slice(0, 5).map((item: any) => ({
+        type: item.type === 'critical' ? 'critical' : item.type === 'screenshot_captured' ? 'warning' : 'info',
+        title: item.type === 'keylog' ? 'Keystrokes Captured' :
+          item.type === 'screenshot_captured' ? 'Screenshot Captured' : 'Device Activity',
+        device: item.device_id || "Unknown",
+        time: item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : "Just now",
+        icon: item.type === 'critical' ? Shield : item.type === 'screenshot_captured' ? TrendingUp : Activity
+      }));
+
+      setStats({
+        totalEvents: data.length,
+        activeDevices: devices.size,
+        criticalAlerts: criticals,
+        onlineRate: devices.size > 0 ? 100 : 0,
+        recentEvents: recent,
+        activityData: chartActivity,
+        threatTypeData: chartTypes
+      });
+    } catch (err) {
+      console.error(err);
+      toast.error("Dashboard Sync Failed");
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1>Dashboard Overview</h1>
-        <p className="text-muted-foreground mt-1">
-          Real-time monitoring and compliance analytics
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1>Dashboard Overview</h1>
+          <p className="text-muted-foreground mt-1">
+            Real-time monitoring and compliance analytics from AWS
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={fetchDashboardData} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Refresh Stats
+        </Button>
       </div>
 
       {/* Key Metrics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Devices</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Captured Events</CardTitle>
             <Monitor className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {statsLoading ? (
-              <div className="flex items-center justify-center h-12">
-                <Loader2 className="h-4 w-4 animate-spin" />
-              </div>
-            ) : (
-              <>
-                <div className="text-2xl font-bold">{stats?.total_devices || 0}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  <span className="text-green-600">{stats?.active_devices || 0}</span> online
-                </p>
-              </>
-            )}
+            <div className="text-2xl font-bold">
+              {loading ? "..." : (stats.totalEvents >= 50 ? "50+" : stats.totalEvents)}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Live Cloud Stream
+            </p>
+          </CardContent>
         </Card>
 
         <Card>
@@ -77,18 +145,11 @@ export function Dashboard() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {statsLoading ? (
-              <div className="flex items-center justify-center h-12">
-                <Loader2 className="h-4 w-4 animate-spin" />
-              </div>
-            ) : (
-              <>
-                <div className="text-2xl font-bold">{stats?.active_devices || 0}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {stats?.total_devices ? Math.round((stats.active_devices / stats.total_devices) * 100) : 0}% online rate
-                </p>
-              </>
-            )}
+            <div className="text-2xl font-bold">{loading ? "..." : stats.activeDevices}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Confirmed ID: {stats.activeDevices > 0 ? "Detected" : "None"}
+            </p>
+          </CardContent>
         </Card>
 
         <Card>
@@ -110,18 +171,11 @@ export function Dashboard() {
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {alertsLoading ? (
-              <div className="flex items-center justify-center h-12">
-                <Loader2 className="h-4 w-4 animate-spin" />
-              </div>
-            ) : (
-              <>
-                <div className="text-2xl font-bold">{alerts?.length || 0}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  <span className="text-red-600">{Math.max(0, (alerts?.length || 0) - 35)}</span> in last 24h
-                </p>
-              </>
-            )}
+            <div className="text-2xl font-bold">{loading ? "..." : stats.criticalAlerts}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Active critical events
+            </p>
+          </CardContent>
         </Card>
       </div>
 
@@ -133,56 +187,44 @@ export function Dashboard() {
             <CardDescription>Device activity events over 24 hours</CardDescription>
           </CardHeader>
           <CardContent>
-            {timelineLoading ? (
-              <div className="flex items-center justify-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : activityData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={250}>
-                <AreaChart data={activityData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="time" />
-                  <YAxis />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="events" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-64 text-muted-foreground">
-                No activity data available
-              </div>
-            )}
+            <ResponsiveContainer width="100%" height={250}>
+              <AreaChart data={stats.activityData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="time" />
+                <YAxis />
+                <Tooltip />
+                <Area type="monotone" dataKey="events" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Threat Distribution</CardTitle>
-            <CardDescription>Security alerts by severity level</CardDescription>
+            <CardTitle>Activity Distribution</CardTitle>
+            <CardDescription>Security events by activity type</CardDescription>
           </CardHeader>
           <CardContent className="flex items-center justify-center">
-            {alertsLoading ? (
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            ) : (
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie
-                    data={threatData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, value }) => `${name}: ${value}`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {threatData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
+            <ResponsiveContainer width="100%" height={250}>
+              <PieChart>
+                <Pie
+                  data={stats.threatTypeData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, value }) => `${name}: ${value}`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {stats.threatTypeData.map((entry: any, index: number) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
         </Card>
       </div>
 
@@ -209,49 +251,38 @@ export function Dashboard() {
       <Card>
         <CardHeader>
           <CardTitle>Recent Security Events</CardTitle>
-          <CardDescription>Latest alerts and notifications</CardDescription>
+          <CardDescription>Latest alerts and notifications from your devices</CardDescription>
         </CardHeader>
         <CardContent>
-          {alertsLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : alerts && alerts.length > 0 ? (
-            <div className="space-y-4">
-              {alerts.slice(0, 5).map((alert: any, index: number) => {
-                let icon = AlertTriangle;
-                let typeClass = "text-orange-600";
-                
-                if (alert.type?.includes('error') || alert.type?.includes('critical')) {
-                  icon = Shield;
-                  typeClass = "text-red-600";
-                } else if (alert.type?.includes('info')) {
-                  icon = CheckCircle;
-                  typeClass = "text-blue-600";
-                }
+          <div className="space-y-4">
+            {stats.recentEvents.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No recent events recorded</p>
+            ) : (
+              stats.recentEvents.map((event, index) => {
+                const Icon = event.icon;
+                const colors = {
+                  critical: "text-red-600",
+                  warning: "text-orange-600",
+                  info: "text-blue-600",
+                };
 
-                const Icon = icon;
-                
                 return (
                   <div key={index} className="flex items-start gap-4 pb-4 border-b last:border-0 last:pb-0">
-                    <div className={`mt-1 ${typeClass}`}>
+                    <div className={`mt-1 ${colors[event.type as keyof typeof colors]}`}>
                       <Icon className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
-                      <p className="font-medium">{alert.data ? JSON.stringify(alert.data).substring(0, 60) : alert.type}</p>
+                      <p className="font-medium">{event.title}</p>
                       <p className="text-sm text-muted-foreground">
-                        Device: {alert.device_id || 'System'} • {formatTimeAgo(alert.timestamp)}
+                        Device: {event.device} • {event.time}
                       </p>
                     </div>
                   </div>
                 );
-              })}
-            </div>
-          ) : (
-            <div className="flex items-center justify-center py-8 text-muted-foreground">
-              No alerts available
-            </div>
-          )}
+              })
+            )}
+          </div>
+        </CardContent>
       </Card>
     </div>
   );

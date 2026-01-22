@@ -31,3 +31,6 @@ agent/__pycache__/
 /.nuxt/
 /.expo/
 public/build/
+
+KeyGuardDeploy.zip
+agent/config.py

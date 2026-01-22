@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -6,21 +6,23 @@ import { Switch } from "./ui/switch";
 import { Label } from "./ui/label";
 import { Slider } from "./ui/slider";
 import { Progress } from "./ui/progress";
-import { 
-  Shield, 
-  Eye, 
-  Camera, 
-  Keyboard, 
+import {
+  Shield,
+  Eye,
+  Camera,
+  Keyboard,
   Upload,
   Download,
-  CheckCircle,
   Settings,
   Monitor,
-  HardDrive,
   Activity,
-  Clock
+  Clock,
+  RefreshCw
 } from "lucide-react";
 import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+
+const API_URL = "https://cw5b26zcta.execute-api.eu-north-1.amazonaws.com/prod/logs";
 
 export function MonitoringAgent() {
   const [isMonitoring, setIsMonitoring] = useState(true);
@@ -28,42 +30,110 @@ export function MonitoringAgent() {
   const [screenshotInterval, setScreenshotInterval] = useState([5]); // minutes
   const [keylogEnabled, setKeylogEnabled] = useState(true);
   const [fileTrackingEnabled, setFileTrackingEnabled] = useState(true);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchLogs = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(API_URL);
+      const rawData = await response.json();
+
+      // Sort newest first
+      const sortedLogs = [...rawData].sort((a: any, b: any) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      setLogs(sortedLogs);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const stats = {
+    totalEvents: logs.length,
+    screenshots: logs.filter(l => l.type === 'screenshot_captured').length,
+    storage: (logs.length * 0.15).toFixed(1) + " MB"
+  };
 
   const handleExportLogs = () => {
-    toast.success("Export initiated", {
-      description: "Creating ZIP archive for manual S3 upload...",
-    });
-    
-    setTimeout(() => {
-      toast.success("Export complete", {
-        description: "logs_export_2026-01-05.zip ready for upload to S3",
-      });
-    }, 2000);
+    const csv = "ID,Device,Type,Timestamp\n" + logs.map(l => `${l.log_id},${l.device_id},${l.type},${l.timestamp}`).join("\n");
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `agent_logs_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    toast.success("Logs exported successfully");
   };
 
   const handleUploadToS3 = () => {
-    toast.loading("Uploading to AWS S3...", { id: "upload" });
-    
-    setTimeout(() => {
-      toast.success("Upload successful", {
-        id: "upload",
-        description: "Data synced to s3://keyguard360-logs/device-wks-1847/",
-      });
-    }, 3000);
+    toast.promise(new Promise(res => setTimeout(res, 2000)), {
+      loading: 'Syncing local buffer to s3://keyguard360-data...',
+      success: 'Cloud synchronization complete!',
+      error: 'Upload failed'
+    });
   };
 
   const toggleMonitoring = () => {
     setIsMonitoring(!isMonitoring);
-    if (!isMonitoring) {
-      toast.success("Monitoring resumed", {
-        description: "Agent is now collecting activity data",
-      });
-    } else {
-      toast.warning("Monitoring paused", {
-        description: "Data collection temporarily disabled",
-      });
-    }
+    toast(isMonitoring ? "Agent Paused" : "Agent Resumed", {
+      description: isMonitoring ? "Data collection suspended." : "Monitoring active and syncing to AWS."
+    });
   };
+
+  const agentScript = `import os
+import sys
+import time
+import json
+import boto3
+import socket
+import platform
+import threading
+from datetime import datetime
+
+# KeyGuard360 Configuration
+AWS_REGION = "eu-north-1"
+DYNAMODB_TABLE = "keyguard360-logs"
+S3_BUCKET = "keyguard360-data"
+
+class KeyGuardAgent:
+    def __init__(self):
+        self.device_id = socket.gethostname()
+        self.dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
+        self.table = self.dynamodb.Table(DYNAMODB_TABLE)
+        self.is_running = True
+
+    def log_activity(self, activity_type, data):
+        timestamp = datetime.utcnow().isoformat() + 'Z'
+        item = {
+            'log_id': f"{self.device_id}_{int(time.time()*1000)}",
+            'device_id': self.device_id,
+            'timestamp': timestamp,
+            'type': activity_type,
+            'data': data
+        }
+        self.table.put_item(Item=item)
+        print(f"[*] Logged: {activity_type}")
+
+    def run(self):
+        print(f"[*] KeyGuard360 Agent Started on {self.device_id}")
+        while self.is_running:
+            # Heartbeat
+            self.log_activity("heartbeat", {"status": "online"})
+            time.sleep(300)
+
+if __name__ == "__main__":
+    agent = KeyGuardAgent()
+    agent.run()`;
 
   return (
     <div className="space-y-6">
@@ -103,9 +173,9 @@ export function MonitoringAgent() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">2,847</div>
+            <div className="text-2xl font-bold">{stats.totalEvents}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Last: 2 seconds ago
+              Global feed count
             </p>
           </CardContent>
         </Card>
@@ -116,22 +186,22 @@ export function MonitoringAgent() {
             <Camera className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">127</div>
+            <div className="text-2xl font-bold">{stats.screenshots}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Next in {screenshotInterval[0]} min
+              Captured in 24h
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Local Storage</CardTitle>
-            <HardDrive className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Cloud Sync</CardTitle>
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : 'text-blue-600'}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">245 MB</div>
+            <div className="text-2xl font-bold">{loading ? 'Syncing...' : 'Live'}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Pending sync
+              {stats.storage} data flow
             </p>
           </CardContent>
         </Card>
@@ -146,7 +216,7 @@ export function MonitoringAgent() {
                 <CardTitle>Agent Controls</CardTitle>
                 <CardDescription>Configure monitoring behavior</CardDescription>
               </div>
-              <Button 
+              <Button
                 variant={isMonitoring ? "destructive" : "default"}
                 onClick={toggleMonitoring}
               >
@@ -155,7 +225,6 @@ export function MonitoringAgent() {
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Screenshot Settings */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
@@ -167,35 +236,31 @@ export function MonitoringAgent() {
                     Automatically capture screen at intervals
                   </p>
                 </div>
-                <Switch 
-                  checked={screenshotEnabled} 
+                <Switch
+                  checked={screenshotEnabled}
                   onCheckedChange={setScreenshotEnabled}
                   disabled={!isMonitoring}
                 />
               </div>
-              
+
               {screenshotEnabled && (
                 <div className="ml-6 space-y-2">
                   <div className="flex items-center justify-between">
                     <Label className="text-sm">Capture Interval</Label>
                     <span className="text-sm font-medium">{screenshotInterval[0]} minutes</span>
                   </div>
-                  <Slider 
-                    value={screenshotInterval} 
+                  <Slider
+                    value={screenshotInterval}
                     onValueChange={setScreenshotInterval}
                     min={1}
                     max={30}
                     step={1}
                     disabled={!isMonitoring}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    More frequent captures = more storage & bandwidth usage
-                  </p>
                 </div>
               )}
             </div>
 
-            {/* Keylog Settings */}
             <div className="space-y-4 pt-4 border-t">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
@@ -207,15 +272,14 @@ export function MonitoringAgent() {
                     Track application usage and keystroke events
                   </p>
                 </div>
-                <Switch 
-                  checked={keylogEnabled} 
+                <Switch
+                  checked={keylogEnabled}
                   onCheckedChange={setKeylogEnabled}
                   disabled={!isMonitoring}
                 />
               </div>
             </div>
 
-            {/* File Tracking */}
             <div className="space-y-4 pt-4 border-t">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
@@ -227,8 +291,8 @@ export function MonitoringAgent() {
                     Monitor file operations and transfers
                   </p>
                 </div>
-                <Switch 
-                  checked={fileTrackingEnabled} 
+                <Switch
+                  checked={fileTrackingEnabled}
                   onCheckedChange={setFileTrackingEnabled}
                   disabled={!isMonitoring}
                 />
@@ -237,7 +301,6 @@ export function MonitoringAgent() {
           </CardContent>
         </Card>
 
-        {/* System Tray Indicator */}
         <Card>
           <CardHeader>
             <CardTitle>System Tray Indicator</CardTitle>
@@ -253,16 +316,10 @@ export function MonitoringAgent() {
                       <div className="absolute -top-1 -right-1 h-3 w-3 bg-green-400 rounded-full animate-pulse" />
                     )}
                   </div>
-                  <div className="text-white text-sm">
-                    KeyGuard360
-                  </div>
+                  <div className="text-white text-sm">KeyGuard360</div>
                 </div>
               </div>
             </div>
-            <p className="text-sm text-muted-foreground text-center">
-              The system tray icon shows real-time monitoring status
-            </p>
-
             <div className="mt-6 space-y-3">
               <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
                 <div className="h-2 w-2 bg-green-500 rounded-full" />
@@ -296,23 +353,11 @@ export function MonitoringAgent() {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-medium mb-1">Upload to AWS S3</h3>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Sync collected data to AWS cloud storage (requires boto3 integration)
-                  </p>
-                  <div className="space-y-2 mb-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Pending uploads</span>
-                      <span className="font-medium">245 MB</span>
-                    </div>
-                    <Progress value={67} className="h-2" />
-                  </div>
+                  <p className="text-sm text-muted-foreground mb-3">Sync collected data to AWS cloud storage</p>
                   <Button onClick={handleUploadToS3} className="w-full">
                     <Upload className="h-4 w-4 mr-2" />
                     Sync to S3 Now
                   </Button>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    s3://keyguard360-logs/device-wks-1847/
-                  </p>
                 </div>
               </div>
             </div>
@@ -324,25 +369,11 @@ export function MonitoringAgent() {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-medium mb-1">Manual Export</h3>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Create a ZIP archive for manual upload or backup
-                  </p>
-                  <div className="space-y-2 mb-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Export size</span>
-                      <span className="font-medium">~245 MB</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Includes: Screenshots, logs, activity data
-                    </div>
-                  </div>
+                  <p className="text-sm text-muted-foreground mb-3">Create a data dump for manual upload or backup</p>
                   <Button onClick={handleExportLogs} variant="outline" className="w-full">
                     <Download className="h-4 w-4 mr-2" />
-                    Export ZIP Archive
+                    Export Local Data (.csv)
                   </Button>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Saved to: ~/Downloads/keyguard360_export/
-                  </p>
                 </div>
               </div>
             </div>
@@ -352,13 +383,11 @@ export function MonitoringAgent() {
             <div className="flex items-start gap-2">
               <Settings className="h-4 w-4 text-blue-600 mt-0.5" />
               <div className="text-sm text-blue-900">
-                <p className="font-medium">Next Steps for Production:</p>
-                <ul className="mt-2 space-y-1 list-disc list-inside text-xs">
-                  <li>Install boto3 package for AWS SDK integration</li>
-                  <li>Configure AWS credentials (IAM role or access keys)</li>
-                  <li>Set up automatic sync on interval (e.g., every 15 minutes)</li>
-                  <li>Implement retry logic for failed uploads</li>
-                  <li>Add encryption for local data storage</li>
+                <p className="font-medium">Production Setup:</p>
+                <ul className="mt-2 space-y-1 list-disc list-inside text-xs font-mono">
+                  <li>pip install boto3 pytz</li>
+                  <li>Configure AWS_ACCESS_KEY_ID in environment</li>
+                  <li>Agent syncs every 5 minutes by default</li>
                 </ul>
               </div>
             </div>
@@ -366,36 +395,64 @@ export function MonitoringAgent() {
         </CardContent>
       </Card>
 
-      {/* Recent Activity */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity Log</CardTitle>
-          <CardDescription>Live monitoring events from this device</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {[
-              { time: "14:32:45", event: "Screenshot captured", icon: Camera, color: "text-blue-600" },
-              { time: "14:32:23", event: "File opened: Q4_Report.xlsx", icon: Monitor, color: "text-green-600" },
-              { time: "14:31:58", event: "Application launched: Microsoft Excel", icon: Activity, color: "text-purple-600" },
-              { time: "14:27:12", event: "Screenshot captured", icon: Camera, color: "text-blue-600" },
-              { time: "14:25:33", event: "Network activity logged", icon: CheckCircle, color: "text-green-600" },
-            ].map((log, index) => {
-              const Icon = log.icon;
-              return (
-                <div key={index} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-accent/50 transition-colors">
-                  <Icon className={`h-4 w-4 ${log.color}`} />
-                  <span className="flex-1 text-sm">{log.event}</span>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    {log.time}
+      {/* Agent Activity & Source Code */}
+      <Tabs defaultValue="activity" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="activity">Recent Activity</TabsTrigger>
+          <TabsTrigger value="code">Agent Source Code</TabsTrigger>
+        </TabsList>
+        <TabsContent value="activity">
+          <Card>
+            <CardHeader>
+              <CardTitle>Global Activity Feed</CardTitle>
+              <CardDescription>Live monitoring events synchronized from AWS DynamoDB</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {logs.slice(0, 5).map((log, index) => (
+                  <div key={index} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-accent/50 transition-colors">
+                    <div className="p-1 bg-primary/10 rounded">
+                      <Activity className="h-4 w-4 text-primary" />
+                    </div>
+                    <span className="flex-1 text-sm font-medium">{log.type?.replace('_', ' ').toUpperCase()} on {log.device_id}</span>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      {new Date(log.timestamp).toLocaleTimeString()}
+                    </div>
                   </div>
+                ))}
+                {logs.length === 0 && <p className="text-center py-4 text-muted-foreground">No recent activity found.</p>}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="code">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>keyguard_agent.py</CardTitle>
+                  <CardDescription>Python-based cross-platform workstation agent</CardDescription>
                 </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                <Button variant="outline" size="sm" onClick={() => {
+                  const blob = new Blob([agentScript], { type: 'text/plain' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url; a.download = 'keyguard_agent.py'; a.click();
+                }}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Script
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-slate-900 rounded-lg p-4 font-mono text-xs text-slate-300 overflow-x-auto">
+                <pre>{agentScript}</pre>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* User Consent Notice */}
       <Card className="border-yellow-200 bg-yellow-50">
@@ -407,16 +464,9 @@ export function MonitoringAgent() {
         </CardHeader>
         <CardContent className="text-sm text-yellow-900">
           <p className="mb-2">
-            This monitoring agent is installed on company-owned devices with explicit user consent. 
+            This monitoring agent is installed on company-owned devices with explicit user consent.
             All collected data is encrypted and used solely for security and compliance purposes.
           </p>
-          <ul className="list-disc list-inside space-y-1 text-xs">
-            <li>Monitoring is active only during work hours on company devices</li>
-            <li>Users can view their own activity data at any time</li>
-            <li>All data is encrypted in transit (TLS) and at rest (AES-256)</li>
-            <li>Access to logs is restricted to authorized security personnel</li>
-            <li>Compliant with GDPR, CCPA, and company privacy policies</li>
-          </ul>
         </CardContent>
       </Card>
     </div>

@@ -1,15 +1,16 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Progress } from "./ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   RadarChart,
   PolarGrid,
@@ -18,18 +19,22 @@ import {
   Radar,
   Legend
 } from "recharts";
-import { 
-  FileText, 
-  Download, 
-  CheckCircle, 
-  XCircle, 
+import {
+  FileText,
+  Download,
+  CheckCircle,
+  XCircle,
   AlertTriangle,
   Shield,
   Lock,
   Eye,
   Database,
-  Clock
+  Clock,
+  RefreshCw
 } from "lucide-react";
+import { toast } from "sonner";
+
+const API_URL = "https://cw5b26zcta.execute-api.eu-north-1.amazonaws.com/prod/logs";
 
 const complianceScoreData = [
   { category: "Access Control", current: 98, target: 95 },
@@ -154,10 +159,13 @@ const getSeverityBadge = (severity: string) => {
 const getStatusBadge = (status: string) => {
   switch (status) {
     case "completed":
+    case "resolved":
       return <Badge className="bg-green-500 hover:bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />Completed</Badge>;
     case "in_progress":
       return <Badge className="bg-blue-500 hover:bg-blue-600"><Clock className="h-3 w-3 mr-1" />In Progress</Badge>;
     case "open":
+    case "high":
+    case "critical":
       return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Open</Badge>;
     default:
       return <Badge variant="outline">{status}</Badge>;
@@ -165,6 +173,62 @@ const getStatusBadge = (status: string) => {
 };
 
 export function ComplianceReports() {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchComplianceData = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(API_URL);
+      if (!response.ok) throw new Error("Sync failed");
+      const data = await response.json();
+      setLogs(data);
+    } catch (err) {
+      console.error(err);
+      toast.error("Compliance Sync Error", { description: "Failed to reload audit logs." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchComplianceData();
+    const interval = setInterval(fetchComplianceData, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const processIssues = () => {
+    const issues = logs
+      .filter(l => l.type === 'unauthorized_access' || (l.type === 'keylog' && l.count > 500))
+      .slice(0, 10)
+      .map(l => ({
+        id: l.log_id || `ISS-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+        severity: l.type === 'unauthorized_access' ? 'high' : 'medium',
+        category: l.type === 'unauthorized_access' ? 'Access Control' : 'Activity Logging',
+        issue: l.type === 'unauthorized_access' ? `Unauthorized login attempt on ${l.device_id}` : `High keystroke volume detected on ${l.device_id}`,
+        affected: l.device_id || "Unknown",
+        dueDate: "2026-01-15",
+        status: "open",
+      }));
+    return issues.length > 0 ? issues : [];
+  };
+
+  const exportCompliance = () => {
+    const csvContent = "data:text/csv;charset=utf-8,"
+      + ["ID", "Issue", "Severity", "Affected"].join(",") + "\n"
+      + processIssues().map(i => [i.id, `"${i.issue}"`, i.severity, i.affected].join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.href = encodedUri;
+    link.download = "compliance_audit_snapshot.csv";
+    link.click();
+  };
+
+  const complianceIssues = processIssues();
+  const summaryScore = Math.max(75, 100 - (complianceIssues.length * 2));
+  const openCritical = complianceIssues.filter(i => i.severity === 'critical').length;
+  const openHigh = complianceIssues.filter(i => i.severity === 'high').length;
+
   return (
     <div className="space-y-6">
       <div>
@@ -182,8 +246,8 @@ export function ComplianceReports() {
             <Shield className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">96.3%</div>
-            <Progress value={96.3} className="h-2 mt-2" />
+            <div className="text-2xl font-bold">{summaryScore}%</div>
+            <Progress value={summaryScore} className="h-2 mt-2" />
           </CardContent>
         </Card>
 
@@ -193,35 +257,35 @@ export function ComplianceReports() {
             <AlertTriangle className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">14</div>
+            <div className="text-2xl font-bold">{complianceIssues.length}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              3 critical • 5 high
+              {openCritical} critical • {openHigh} high
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Reports Generated</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Audit Sync</CardTitle>
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : 'text-blue-600'}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">52</div>
+            <div className="text-2xl font-bold">{loading ? "Syncing" : "Connected"}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              This year
+              Live from AWS Cloud
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Last Audit</CardTitle>
+            <CardTitle className="text-sm font-medium">Compliance Pulse</CardTitle>
             <CheckCircle className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">Jan 3</div>
+            <div className="text-2xl font-bold">Stable</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Q4 2025 Review
+              {new Date().toLocaleDateString()} Review
             </p>
           </CardContent>
         </Card>
@@ -273,12 +337,12 @@ export function ComplianceReports() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Recent Reports</CardTitle>
-              <CardDescription>Generated compliance and audit reports</CardDescription>
+              <CardTitle>Recent Audit Snapshot</CardTitle>
+              <CardDescription>Live data points used for compliance scoring</CardDescription>
             </div>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={exportCompliance}>
               <Download className="h-4 w-4 mr-2" />
-              Export All
+              Export
             </Button>
           </div>
         </CardHeader>
@@ -351,12 +415,11 @@ export function ComplianceReports() {
                 <div key={issue.id} className="border rounded-lg p-4">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-start gap-3 flex-1">
-                      <AlertTriangle className={`h-5 w-5 mt-1 ${
-                        issue.severity === 'critical' ? 'text-red-600' :
-                        issue.severity === 'high' ? 'text-orange-600' :
-                        issue.severity === 'medium' ? 'text-yellow-600' :
-                        'text-blue-600'
-                      }`} />
+                      <AlertTriangle className={`h-5 w-5 mt-1 ${issue.severity === 'critical' ? 'text-red-600' :
+                          issue.severity === 'high' ? 'text-orange-600' :
+                            issue.severity === 'medium' ? 'text-yellow-600' :
+                              'text-blue-600'
+                        }`} />
                       <div className="flex-1">
                         <div className="flex items-start justify-between gap-4">
                           <div>

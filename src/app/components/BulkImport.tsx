@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Upload, FileJson, CheckCircle, XCircle, FolderOpen, Database } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Upload, FileJson, CheckCircle, XCircle, FolderOpen, Database, RefreshCw, Cloud } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -21,12 +21,37 @@ interface ImportResult {
   data?: any;
 }
 
+const API_URL = "https://cw5b26zcta.execute-api.eu-north-1.amazonaws.com/prod/logs";
+
 export function BulkImport() {
   const [importing, setImporting] = useState(false);
   const [importResults, setImportResults] = useState<ImportResult[]>([]);
   const [importedDevices, setImportedDevices] = useState<ImportedDevice[]>([]);
+  const [cloudStats, setCloudStats] = useState({ deviceCount: 0, totalLogs: 0 });
+  const [loadingCloud, setLoadingCloud] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchCloudStats = async () => {
+    try {
+      setLoadingCloud(true);
+      const response = await fetch(API_URL);
+      const data = await response.json();
+      const uniqueDevices = new Set(data.map((l: any) => l.device_id));
+      setCloudStats({
+        deviceCount: uniqueDevices.size,
+        totalLogs: data.length
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingCloud(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCloudStats();
+  }, []);
 
   const handleFileImport = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -40,7 +65,7 @@ export function BulkImport() {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      
+
       // Only process JSON files
       if (!file.name.endsWith('.json')) {
         results.push({
@@ -139,12 +164,12 @@ export function BulkImport() {
     importedDevices.forEach(device => {
       localStorage.removeItem(`device_${device.device_id}`);
     });
-    
+
     setImportedDevices([]);
     setImportResults([]);
-    
+
     toast.success("Cleared all imported data");
-    
+
     // Notify app to refresh
     const event = new CustomEvent('devicesCleared');
     window.dispatchEvent(event);
@@ -213,8 +238,36 @@ export function BulkImport() {
         </div>
         <Badge variant="outline" className="gap-2">
           <Database className="h-4 w-4" />
-          {importedDevices.length} devices imported
+          {importedDevices.length} Local Devices
         </Badge>
+      </div>
+
+      {/* Cloud Status */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="p-4 flex items-center gap-4">
+          <div className="p-2 bg-blue-100 rounded-lg">
+            <Cloud className="h-5 w-5 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground uppercase font-semibold">Active in AWS</p>
+            <p className="text-xl font-bold">{loadingCloud ? "..." : cloudStats.deviceCount} Devices</p>
+          </div>
+        </Card>
+        <Card className="p-4 flex items-center gap-4">
+          <div className="p-2 bg-green-100 rounded-lg">
+            <Database className="h-5 w-5 text-green-600" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground uppercase font-semibold">Cloud Event Count</p>
+            <p className="text-xl font-bold">{loadingCloud ? "..." : cloudStats.totalLogs} Logs</p>
+          </div>
+        </Card>
+        <Card className="p-4 flex items-center gap-4">
+          <Button variant="outline" className="w-full" onClick={fetchCloudStats} disabled={loadingCloud}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loadingCloud ? 'animate-spin' : ''}`} />
+            Sync Cloud Totals
+          </Button>
+        </Card>
       </div>
 
       {/* Import Options */}
@@ -242,7 +295,7 @@ export function BulkImport() {
               webkitdirectory=""
               directory=""
             />
-            <Button 
+            <Button
               onClick={handleFolderSelect}
               disabled={importing}
               className="w-full"
@@ -273,7 +326,7 @@ export function BulkImport() {
               onChange={(e) => handleFileImport(e.target.files)}
               className="hidden"
             />
-            <Button 
+            <Button
               onClick={handleFileSelect}
               disabled={importing}
               variant="outline"
@@ -296,15 +349,15 @@ export function BulkImport() {
               Import JSON files exported from the Python agent using <code className="bg-background px-1 py-0.5 rounded">export_data.py</code>
             </p>
             <div className="flex gap-2 mt-3">
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 variant="outline"
                 onClick={exportSampleFormat}
               >
                 Download Sample Format
               </Button>
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 variant="ghost"
                 onClick={() => {
                   toast.info("Run: python3 export_data.py --all", {
@@ -330,7 +383,7 @@ export function BulkImport() {
           </div>
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {importResults.map((result, idx) => (
-              <div 
+              <div
                 key={idx}
                 className="flex items-center justify-between p-3 rounded-lg border bg-card"
               >
@@ -361,8 +414,8 @@ export function BulkImport() {
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Imported Devices</h3>
-            <Button 
-              size="sm" 
+            <Button
+              size="sm"
               variant="destructive"
               onClick={clearImportedData}
             >
@@ -371,13 +424,13 @@ export function BulkImport() {
           </div>
           <div className="grid md:grid-cols-2 gap-3">
             {importedDevices.map((device, idx) => (
-              <div 
+              <div
                 key={idx}
                 className="p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
               >
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-medium">{device.hostname}</h4>
-                  <Badge 
+                  <Badge
                     variant={device.status === 'online' ? 'default' : 'secondary'}
                     className="text-xs"
                   >
