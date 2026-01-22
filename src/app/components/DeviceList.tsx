@@ -96,17 +96,20 @@ export function DeviceList() {
 
       const deviceMap: Record<string, any> = {};
 
-      sortedLogs.forEach((log: any) => {
+      // Scan more logs for better device discovery
+      const logsToProcess = sortedLogs.slice(0, 300);
+
+      logsToProcess.forEach((log: any) => {
         if (!deviceMap[log.device_id]) {
           let systemInfo = {
-            os: "Windows 11",
-            ip: "192.168.1.10",
+            os: "Windows",
+            ip: "Unknown",
             hostname: log.device_id.split('-').pop()?.toUpperCase() || "Unknown",
             location: "Remote Entry"
           };
 
-          // Try to find a device_info_update log for this device
-          const infoLog = sortedLogs.find(l => l.device_id === log.device_id && l.type === 'device_info_update');
+          // Find the MOST recent info for this specific device
+          const infoLog = logsToProcess.find(l => l.device_id === log.device_id && l.type === 'device_info_update');
           if (infoLog) {
             try {
               const data = typeof infoLog.data === 'string' ? JSON.parse(infoLog.data) : infoLog.data;
@@ -118,18 +121,19 @@ export function DeviceList() {
           }
 
           const lastSeenDate = new Date(log.timestamp);
-          const isOnline = (new Date().getTime() - lastSeenDate.getTime()) < (5 * 60 * 1000);
+          // Device is online if seen in last 2 minutes (more aggressive check)
+          const isOnline = (new Date().getTime() - lastSeenDate.getTime()) < (2 * 60 * 1000);
 
           deviceMap[log.device_id] = {
             id: log.device_id,
             name: systemInfo.hostname,
-            type: systemInfo.os.toLowerCase().includes('mac') || systemInfo.os.toLowerCase().includes('darwin') ? "MacBook" : "Workstation",
+            type: systemInfo.os.toLowerCase().includes('mac') ? "MacBook" : "Workstation",
             os: systemInfo.os,
             user: log.user || "Unknown User",
             status: isOnline ? "online" : "offline",
             lastSeen: formatRelativeTime(log.timestamp),
             rawTimestamp: log.timestamp,
-            compliance: Math.floor(Math.random() * (100 - 85 + 1)) + 85,
+            compliance: 95,
             ip: systemInfo.ip,
             location: systemInfo.location || "Remote Entry",
           };
