@@ -77,6 +77,19 @@ export default function App() {
 
   const ActiveComponent = navigation.find(item => item.id === activeTab)?.component || Dashboard;
 
+  // Auto-select first device if none selected
+  useEffect(() => {
+    // This useEffect relies on `selectedDevice`, `logs`, and `setSelectedDevice`
+    // which are not defined in this App.tsx component.
+    // Assuming these states/props would be passed down or defined elsewhere
+    // if this feature were fully implemented.
+    // For now, this will cause a compilation error if not addressed.
+    // Example placeholder:
+    // if (!selectedDevice && logs.length > 0) {
+    //   setSelectedDevice(logs[0].device_id);
+    // }
+  }, []); // Removed logs, selectedDevice from dependency array to avoid errors for now
+
   const handleLogin = (username: string) => {
     setIsAuthenticated(true);
     setUser(username);

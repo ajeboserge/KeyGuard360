@@ -227,10 +227,8 @@ class KeyGuardAgent:
                 'memory_total_gb': round(memory.total / (1024**3), 2),
                 'memory_used_gb': round(memory.used / (1024**3), 2),
                 'memory_percent': memory.percent,
-                'disk_total_gb': round(disk.total / (1024**3), 2),
-                'disk_used_gb': round(disk.used / (1024**3), 2),
                 'disk_percent': disk.percent,
-                'timestamp': datetime.now(UTC).isoformat() + 'Z'
+                'timestamp': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
             }
         except Exception as e:
             logger.error(f"Error collecting system info: {e}")
@@ -344,7 +342,7 @@ class KeyGuardAgent:
                 'log_id': f"{self.device_id}_{int(time.time() * 1000)}",
                 'device_id': self.device_id,
                 'user': getpass.getuser(),
-                'timestamp': datetime.now(UTC).isoformat() + 'Z',
+                'timestamp': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z',
                 'type': activity_type,
                 'data': json.dumps(data)
             }
@@ -365,7 +363,7 @@ class KeyGuardAgent:
                         'device_id': self.device_id,
                         'severity': severity,
                         'message': message,
-                        'timestamp': datetime.now(UTC).isoformat()
+                        'timestamp': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
                     })
                 )
                 logger.info(f"Alert sent: {message}")
@@ -382,7 +380,7 @@ class KeyGuardAgent:
                 'hostname': system_info.get('hostname', 'Unknown'),
                 'user': system_info.get('user', 'Unknown'),
                 'os': system_info.get('os', 'Unknown'),
-                'last_seen': datetime.now(UTC).isoformat() + 'Z',
+                'last_seen': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z',
                 'status': 'online',
                 'agent_version': self.config.AGENT_VERSION,
                 'system_info': json.dumps(system_info)
@@ -500,7 +498,7 @@ class KeyGuardAgent:
                 ExpressionAttributeNames={'#status': 'status'},
                 ExpressionAttributeValues={
                     ':status': 'offline',
-                    ':timestamp': datetime.now(UTC).isoformat()
+                    ':timestamp': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
                 }
             )
         except Exception as e:

