@@ -101,17 +101,19 @@ export function DeviceList() {
           let systemInfo = {
             os: "Windows 11",
             ip: "192.168.1.10",
-            hostname: log.device_id.split('-').pop()?.toUpperCase() || "Unknown"
+            hostname: log.device_id.split('-').pop()?.toUpperCase() || "Unknown",
+            location: "Remote Entry"
           };
 
           // Try to find a device_info_update log for this device
           const infoLog = sortedLogs.find(l => l.device_id === log.device_id && l.type === 'device_info_update');
           if (infoLog) {
             try {
-              const data = JSON.parse(infoLog.data);
+              const data = typeof infoLog.data === 'string' ? JSON.parse(infoLog.data) : infoLog.data;
               systemInfo.os = data.os || systemInfo.os;
               systemInfo.ip = data.ip_address || systemInfo.ip;
               systemInfo.hostname = data.hostname || systemInfo.hostname;
+              systemInfo.location = data.location || "Remote Entry";
             } catch (e) { }
           }
 
@@ -129,7 +131,7 @@ export function DeviceList() {
             rawTimestamp: log.timestamp,
             compliance: Math.floor(Math.random() * (100 - 85 + 1)) + 85,
             ip: systemInfo.ip,
-            location: "Remote Entry",
+            location: systemInfo.location || "Remote Entry",
           };
         }
       });

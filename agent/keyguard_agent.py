@@ -165,6 +165,31 @@ class KeyGuardAgent:
         
         device_hash = hashlib.md5(unique_string.encode()).hexdigest()[:12]
         return f"device-{device_hash}"
+
+    def get_location_info(self):
+        """Get geographical location based on public IP"""
+        try:
+            import urllib.request
+            import json
+            # Using a free, no-key-required geolocation API
+            with urllib.request.urlopen('http://ip-api.com/json/', timeout=5) as response:
+                data = json.loads(response.read().decode())
+                if data.get('status') == 'success':
+                    city = data.get('city', 'Unknown City')
+                    region = data.get('regionName', '')
+                    country = data.get('country', 'Unknown Country')
+                    return f"{city}, {country}" if not region else f"{city} ({region}), {country}"
+        except Exception:
+            pass
+        return "Remote Entry"
+
+    def get_public_ip(self):
+        """Get the actual public IP address of the device"""
+        try:
+            import urllib.request
+            return urllib.request.urlopen('https://api.ipify.org', timeout=5).read().decode('utf8')
+        except:
+            return None
     
     def get_system_info(self):
         """Collect system information"""
@@ -175,20 +200,26 @@ class KeyGuardAgent:
             memory = psutil.virtual_memory()
             disk = psutil.disk_usage('/')
             
-            # Get IP Address
+            # Get Public IP and Location
+            public_ip = self.get_public_ip()
+            location = self.get_location_info()
+            
+            # Get Internal IP for technical logs
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 s.connect(("8.8.8.8", 80))
-                ip_address = s.getsockname()[0]
+                internal_ip = s.getsockname()[0]
                 s.close()
             except:
-                ip_address = "127.0.0.1"
+                internal_ip = "127.0.0.1"
             
             return {
                 'device_id': self.device_id,
                 'hostname': platform.node(),
                 'user': getpass.getuser(),
-                'ip_address': ip_address,
+                'ip_address': public_ip or internal_ip,
+                'internal_ip': internal_ip,
+                'location': location,
                 'os': f"{platform.system()} {platform.release()}",
                 'platform': platform.platform(),
                 'processor': platform.processor(),
